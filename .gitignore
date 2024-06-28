@@ -40,6 +40,9 @@ MODULE.bazel.lock
 .bazelversion
 # User-specific .bazelrc
 user.bazelrc
+# Bzlmod lock file
+MODULE.bazel
+MODULE.bazel.lock
 
 ### vcpkg ###
 vcpkg_installed/*
