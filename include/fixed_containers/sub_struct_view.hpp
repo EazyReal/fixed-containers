@@ -20,6 +20,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <concepts>
 
 /**
  * Terminologies
@@ -49,6 +50,7 @@
 namespace fixed_containers::sub_struct_view_detail
 {
 
+inline constexpr std::size_t MAX_NUM_PATHS = 100;
 inline constexpr std::size_t MAX_PATH_LENGTH = 16;
 inline constexpr std::size_t MAX_DIM = 5;
 inline constexpr std::string_view ITERABLE_PATH_NAME = "data[:]";
@@ -131,11 +133,11 @@ constexpr void for_each_path_dfs_helper(S&& instance,
                                         PostFunction&& post_fn,
                                         fixed_containers::in_out<PathNameChain> chain)
 {
-    pre_fn(std::as_const(*chain), instance);
+    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
     chain->push_back(ITERABLE_PATH_NAME);
-    for_each_path_dfs_helper(*instance.data(), pre_fn, post_fn, fixed_containers::in_out{*chain});
+    for_each_path_dfs_helper(*std::forward<S>(instance).data(), std::forward<PreFunction>(pre_fn), std::forward<PostFunction>(post_fn), fixed_containers::in_out{*chain});
     chain->pop_back();
-    post_fn(std::as_const(*chain), instance);
+    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
 }
 
 template <typename S, typename PreFunction, typename PostFunction>
@@ -145,16 +147,16 @@ constexpr void for_each_path_dfs_helper(S&& instance,
                                         PostFunction&& post_fn,
                                         fixed_containers::in_out<PathNameChain> chain)
 {
-    pre_fn(std::as_const(*chain), instance);
+    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
     reflection::for_each_field(
-        instance,
+        std::forward<S>(instance),
         [&pre_fn, &post_fn, &chain]<typename T>(const std::string_view& name, T& field)
         {
             chain->push_back(name);
-            for_each_path_dfs_helper(field, pre_fn, post_fn, fixed_containers::in_out{*chain});
+            for_each_path_dfs_helper(field, std::forward<PreFunction>(pre_fn), std::forward<PostFunction>(post_fn), fixed_containers::in_out{*chain});
             chain->pop_back();
         });
-    post_fn(std::as_const(*chain), instance);
+    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
 }
 
 template <typename S, typename PreFunction, typename PostFunction>
@@ -164,8 +166,8 @@ constexpr void for_each_path_dfs_helper(S&& instance,
                                         PostFunction&& post_fn,
                                         fixed_containers::in_out<PathNameChain> chain)
 {
-    pre_fn(std::as_const(*chain), instance);
-    post_fn(std::as_const(*chain), instance);
+    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
+    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
 }
 
 template <typename S, typename PreFunction, typename PostFunction>
@@ -216,6 +218,7 @@ std::size_t get_pointer_distance(Instance&& instance, Field&& field)
 namespace fixed_containers::sub_struct_view
 {
 
+inline constexpr std::size_t MAX_NUM_PATHS = sub_struct_view_detail::MAX_NUM_PATHS;
 using PathNameChain = sub_struct_view_detail::PathNameChain;
 using Dimension = sub_struct_view_detail::Dimension;
 using Dimensions = sub_struct_view_detail::Dimensions<sub_struct_view_detail::MAX_DIM>;
@@ -239,27 +242,37 @@ struct PathProperties
 
 // This function iterates over all paths of a given struct and calls a pre and post function for
 // each field.
+// We do not perfect forward the instance because we want it to be an lvalue.
 template <typename S, typename PreFunction, typename PostFunction>
     requires(reflection::Reflectable<std::decay_t<S>>)
 constexpr void for_each_path_dfs(S&& instance, PreFunction&& pre_fn, PostFunction&& post_fn)
 {
     PathNameChain chain{};
     sub_struct_view_detail::for_each_path_dfs_helper(
-        instance, pre_fn, post_fn, fixed_containers::in_out{chain});
+        instance, std::forward<PreFunction>(pre_fn), std::forward<PostFunction>(post_fn), fixed_containers::in_out{chain});
+}
+
+template <typename S, typename Function>
+    requires(reflection::Reflectable<std::decay_t<S>>)
+constexpr void for_each_path_dfs(S&& instance, Function&& func)
+{
+    PathNameChain chain{};
+    sub_struct_view_detail::for_each_path_dfs_helper(
+        instance, std::forward<Function>(func), [](const auto&, auto&){}, fixed_containers::in_out{chain});
 }
 
 template <typename S>
 constexpr std::size_t path_count_of()
 {
     std::size_t count = 0;
-    for_each_path_dfs(S{}, [&count](const auto&, auto&) { ++count; }, [](const auto&, auto&) {});
+    for_each_path_dfs(S{}, [&count](const auto&, auto&) { ++count; });
     return count;
 }
 
-template <typename S>
-using PathPropertiesMap = FixedMap<PathNameChain, PathProperties, path_count_of<S>()>;
-template <typename S>
-using PathSet = FixedSet<PathNameChain, path_count_of<S>()>;
+template <std::size_t MAXIMUM_SIZE=MAX_NUM_PATHS>
+using PathPropertiesMap = FixedMap<PathNameChain, PathProperties, MAXIMUM_SIZE>;
+template <std::size_t MAXIMUM_SIZE=MAX_NUM_PATHS>
+using PathSet = FixedSet<PathNameChain, MAXIMUM_SIZE>;
 
 inline PathNameChain path_from_string(const std::string_view& path_name_chain_string)
 {
@@ -272,23 +285,22 @@ inline PathNameChain path_from_string(const std::string_view& path_name_chain_st
                          std::ranges::end(view_of_string_view));
 }
 
-template <typename S>
+template <typename S, std::size_t MAXIMUM_SIZE=MAX_NUM_PATHS>
 auto extract_paths_of(const S& instance = {})
 {
-    PathSet<S> paths{};
+    PathSet<MAXIMUM_SIZE> paths{};
 
     for_each_path_dfs(
         instance,
-        [&]<typename F>(const PathNameChain& chain, const F& /*field*/) { paths.insert(chain); },
-        [&]<typename F>(const PathNameChain&, const F&) {});
+        [&]<typename F>(const PathNameChain& chain, const F& /*field*/) { paths.insert(chain); });
     return paths;
 }
 
-template <typename S, typename FilteringPathSet>
+template <typename S, std::size_t MAXIMUM_SIZE_IN=MAX_NUM_PATHS, std::size_t MAXIMUM_SIZE_OUT=MAX_NUM_PATHS>
 auto extract_path_properties_of_filtered(
-    const S& instance, const std::optional<FilteringPathSet>& registered_set = std::nullopt)
+    const S& instance, const std::optional<PathSet<MAXIMUM_SIZE_IN>>& registered_set = std::nullopt)
 {
-    PathPropertiesMap<S> paths{};
+    PathPropertiesMap<MAXIMUM_SIZE_OUT> paths{};
     Dimensions dimensions{};
 
     for_each_path_dfs(
@@ -343,10 +355,10 @@ auto extract_path_properties_of_filtered(
     return paths;
 }
 
-template <typename S>
+template <typename S, std::size_t MAXIMUM_SIZE=MAX_NUM_PATHS>
 auto extract_path_properties_of(const S& instance = {})
 {
-    return extract_path_properties_of_filtered<S, PathSet<S>>(instance, std::nullopt);
+    return extract_path_properties_of_filtered<S, 0, MAXIMUM_SIZE>(instance, std::nullopt);
 }
 
 void for_each_index(const Offset& offset, auto&& func)
@@ -355,16 +367,98 @@ void for_each_index(const Offset& offset, auto&& func)
     for_each_index_helper<0>(offset, func, indices);
 }
 
-template <typename SuperProperties, typename SubProperties>
-void sub_struct_view_of(const std::byte* base_super_struct_pointer,
-                        const SuperProperties& super_struct_path_properties,
-                        std::byte* base_sub_struct_pointer,
-                        const SubProperties& sub_struct_path_properties)
+// This is the user facing interface for a view of a struct
+template <std::size_t MAXIMUM_SIZE = MAX_NUM_PATHS>
+class StructView
 {
-    for (const auto& [path, path_properties] : sub_struct_path_properties)
+public:
+    StructView() = default;
+
+    template <typename S>
+    StructView(const S& instance = {}):
+    path_properties_(extract_path_properties_of(instance))
     {
-        Offset super_struct_offset = super_struct_path_properties.at(path).offset;
-        Offset sub_struct_offset = sub_struct_path_properties.at(path).offset;
+    }
+
+    template <typename SuperStruct, typename SubStruct>
+    StructView(const SuperStruct& super_struct={}, const SubStruct& sub_struct={})
+    {
+        auto sub_struct_paths = extract_paths_of(sub_struct);
+        path_properties_ = extract_path_properties_of_filtered(super_struct, std::optional{sub_struct_paths});
+    }
+
+    template <typename S>
+    void add_path(const S& instance, const PathNameChain& path) {
+        auto path_properties_map = extract_path_properties_of_filtered<S, PathSet<1>, MAXIMUM_SIZE>(instance, {path});
+        auto [_, was_inserted] = path_properties_.try_emplace(path, path_properties_map.at(path));
+        assert_or_abort(was_inserted);
+    }
+
+    template <typename S>
+    void add_path(const PathNameChain& path) {
+        add_path(S{}, path);
+    }
+
+    template <typename S, typename PathSet>
+    void add_paths(const S& instance, const PathSet& paths) {
+        auto path_properties_map = extract_path_properties_of_filtered(instance, paths);
+        for (const auto& [path, path_properties] : path_properties_map) {
+            auto [_, was_inserted] = path_properties_.try_emplace(path, path_properties);
+            assert_or_abort(was_inserted);
+        }
+    }
+
+    template <typename S, typename PathSet>
+    void add_paths(const PathSet& paths) {
+        add_paths(S{}, paths);
+    }
+
+    [[nodiscard]] PathProperties at(const PathNameChain& path) const {
+        return path_properties_.at(path);
+    }
+
+    const PathPropertiesMap<MAXIMUM_SIZE>& get_path_map_ref() const {
+        return path_properties_;
+    }
+
+    const void* get_field(const void* instance, const PathNameChain& path, const Indices& indices) {
+        auto path_properties = path_properties_.at(path);
+        return static_cast<const void*>(std::next(static_cast<const std::byte*>(instance), static_cast<std::ptrdiff_t>(path_properties.offset.get_offset(indices))));
+    }
+
+    template <typename Function>
+    static void for_each_field(const StructView& struct_view, const void* base_pointer, Function&& func)
+    requires(
+        std::invocable<Function, const PathNameChain&, const Indices&, const void*>)
+    {
+        for (const auto& [path, path_properties] : struct_view.get_path_map_ref())
+        {
+            for_each_index(
+                path_properties.offset,
+                [&](const auto& indices)
+                {
+                    const void* field_ptr = static_cast<const void*>(std::next(static_cast<const std::byte*>(base_pointer), static_cast<std::ptrdiff_t>(path_properties.offset.get_offset(indices))));
+                    std::forward<Function>(func)(path, indices, field_ptr);
+                });
+        }
+    }
+private:
+// now we are storing the `StructView` in a map
+// in the future when we may want to store in a tree (a path on a tree will be the PathNameChain) to support lazy evaluation
+    PathPropertiesMap<MAXIMUM_SIZE> path_properties_;
+};
+
+template <std::size_t SUPER_STRUCT_VIEW_MAXIMUM_SIZE=MAX_NUM_PATHS, std::size_t SUB_STRUCT_VIEW_MAXIMUM_SIZE=MAX_NUM_PATHS>
+void sub_struct_view_of(const std::byte* base_super_struct_pointer,
+                        const StructView<SUPER_STRUCT_VIEW_MAXIMUM_SIZE>& super_struct_view,
+                        std::byte* base_sub_struct_pointer,
+                        const StructView<SUB_STRUCT_VIEW_MAXIMUM_SIZE>& sub_struct_view)
+requires (SUPER_STRUCT_VIEW_MAXIMUM_SIZE >= SUB_STRUCT_VIEW_MAXIMUM_SIZE)
+{
+    for (const auto& [path, path_properties] : sub_struct_view.get_path_map_ref())
+    {
+        Offset super_struct_offset = super_struct_view.at(path).offset;
+        Offset sub_struct_offset = sub_struct_view.at(path).offset;
 
         for_each_index(
             sub_struct_offset,
@@ -378,32 +472,34 @@ void sub_struct_view_of(const std::byte* base_super_struct_pointer,
                               static_cast<std::ptrdiff_t>(sub_struct_offset.get_offset(indices)));
                 *reinterpret_cast<std::uintptr_t*>(sub_struct_field_ptr) =
                     reinterpret_cast<std::uintptr_t>(super_struct_field_ptr);
-            });
+            }
+        );
     }
 }
 
-template <typename Super, typename SuperProperties, typename Sub, typename SubProperties>
-void sub_struct_view_of(const Super& super_struct,
-                        const SuperProperties& super_struct_path_properties,
-                        out<Sub> out_sub_struct,
-                        const SubProperties& sub_struct_path_properties)
+template <typename SuperStruct, std::size_t SUPER_STRUCT_VIEW_MAXIMUM_SIZE=MAX_NUM_PATHS, typename SubStruct, std::size_t SUB_STRUCT_VIEW_MAXIMUM_SIZE=MAX_NUM_PATHS>
+void sub_struct_view_of(const SuperStruct& super_struct,
+                        const StructView<SUPER_STRUCT_VIEW_MAXIMUM_SIZE>& super_struct_view,
+                        out<SubStruct> out_sub_struct,
+                        const StructView<SUB_STRUCT_VIEW_MAXIMUM_SIZE>& sub_struct_view)
+requires (SUPER_STRUCT_VIEW_MAXIMUM_SIZE >= SUB_STRUCT_VIEW_MAXIMUM_SIZE)
 {
     const std::byte* base_super_struct_pointer = memory::addressof_as_const_byte_ptr(super_struct);
     std::byte* base_sub_struct_pointer = memory::addressof_as_mutable_byte_ptr(*out_sub_struct);
 
     return sub_struct_view_of(base_super_struct_pointer,
-                              super_struct_path_properties,
+                              super_struct_view,
                               base_sub_struct_pointer,
-                              sub_struct_path_properties);
+                              sub_struct_view);
 }
 
-template <typename SubStruct>
+template <typename SubStruct, std::size_t MAXIMUM_SIZE = MAX_NUM_PATHS>
 class ContiguousRangeSubStructView
 {
     struct AccessingInfo
     {
-        PathPropertiesMap<SubStruct> sub_struct_path_properties{};
-        PathPropertiesMap<SubStruct> super_struct_path_properties{};
+        StructView<MAXIMUM_SIZE> sub_struct_view{};
+        StructView<MAXIMUM_SIZE> super_struct_view{};
         std::byte* base_array_super_struct_ptr{};
         std::size_t stride{};
         std::size_t size{};
@@ -418,9 +514,9 @@ class ContiguousRangeSubStructView
             std::next(accessing_info.base_array_super_struct_ptr,
                       static_cast<std::ptrdiff_t>(index * accessing_info.stride));
         sub_struct_view::sub_struct_view_of(base_of_ith_entry,
-                                            accessing_info.super_struct_path_properties,
+                                            accessing_info.super_struct_view,
                                             memory::addressof_as_mutable_byte_ptr(instance),
-                                            accessing_info.sub_struct_path_properties);
+                                            accessing_info.sub_struct_view);
         return instance;
     }
 
@@ -492,23 +588,18 @@ public:
     template <typename SuperStructContainer>
     ContiguousRangeSubStructView(SuperStructContainer& super_struct_container)
       : accessing_info_{
-            .sub_struct_path_properties = extract_path_properties_of<SubStruct>(),
-            .super_struct_path_properties = {},
+            .sub_struct_view = {},
+            .super_struct_view = {},
             .base_array_super_struct_ptr =
                 memory::addressof_as_mutable_byte_ptr(*super_struct_container.data()),
             .stride = {},
             .size = super_struct_container.size(),
         }
-
     {
         using SuperStruct = typename SuperStructContainer::value_type;
-        auto super_struct_path_properties_all = extract_path_properties_of<SuperStruct>();
-        for (const auto& [name, _] : accessing_info_.sub_struct_path_properties)
-        {
-            accessing_info_.super_struct_path_properties[name] =
-                super_struct_path_properties_all.at(name);
-        }
-
+        SubStruct sub_struct_instance{};
+        accessing_info_.sub_struct_view = StructView(sub_struct_instance);
+        accessing_info_.super_struct_view = StructView(SuperStruct{}, sub_struct_instance);
         accessing_info_.stride = sizeof(SuperStruct);
     }
 

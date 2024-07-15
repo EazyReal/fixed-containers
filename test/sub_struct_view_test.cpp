@@ -76,7 +76,7 @@ TEST(SubStructView, ExtractPathsOfFlat)
 TEST(SubStructView, ExtractPathPropertiesOfFlat)
 {
     {
-        auto path_properties = extract_path_properties_of<FlatSuperStruct1>();
+        auto path_properties = extract_path_properties_of(FlatSuperStruct1{});
 
         EXPECT_EQ(5, std::size(path_properties));
         EXPECT_EQ(0,
@@ -123,13 +123,13 @@ TEST(SubStructView, SubStructViewOfFlat)
     const FlatSuperStruct1 flat_super_struct_1{};
     FlatSubStruct1 flat_sub_struct_1{};
 
-    auto super_struct_path_properties = extract_path_properties_of(flat_super_struct_1);
-    auto sub_struct_path_properties = extract_path_properties_of(flat_sub_struct_1);
+    auto super_struct_view = StructView(flat_super_struct_1);
+    auto sub_struct_view = StructView(flat_sub_struct_1);
 
     sub_struct_view_of(flat_super_struct_1,
-                       super_struct_path_properties,
+                       super_struct_view,
                        out{flat_sub_struct_1},
-                       sub_struct_path_properties);
+                       sub_struct_view);
 
     ASSERT_EQ(flat_sub_struct_1.retain1, &flat_super_struct_1.retain1);
     ASSERT_EQ(flat_sub_struct_1.retain2, &flat_super_struct_1.retain2);
@@ -336,13 +336,13 @@ TEST(SubStructView, SubStructViewOfRecursive)
     const NestedSuperStructLayer1 nested_super_struct_1{};
     NestedSubStructLayer1 nested_sub_struct_1{};
 
-    auto super_struct_path_properties = extract_path_properties_of(nested_super_struct_1);
-    auto sub_struct_path_properties = extract_path_properties_of(nested_sub_struct_1);
+    auto super_struct_view = StructView(nested_super_struct_1);
+    auto sub_struct_view = StructView(nested_sub_struct_1);
 
     sub_struct_view_of(nested_super_struct_1,
-                       super_struct_path_properties,
+                       super_struct_view,
                        out{nested_sub_struct_1},
-                       sub_struct_path_properties);
+                       sub_struct_view);
 
     ASSERT_EQ(nested_sub_struct_1.retain1, &nested_super_struct_1.retain1);
     ASSERT_EQ(nested_sub_struct_1.nested1.retain1, &nested_super_struct_1.nested1.retain1);
@@ -568,15 +568,13 @@ TEST(SubStructView, SubStructViewOfRecursiveWithArray)
     ArrayTestSuperStructLayer1 array_test_super_struct_1{};
     ArrayTestSubStructLayer1 array_test_sub_struct_1{};
 
-    auto paths = extract_paths_of(array_test_sub_struct_1);
-    auto super_struct_path_properties = extract_path_properties_of_filtered(
-        array_test_super_struct_1, std::optional<PathSet<ArrayTestSubStructLayer1>>{paths});
-    auto sub_struct_path_properties = extract_path_properties_of(array_test_sub_struct_1);
+    auto super_struct_view = StructView(array_test_super_struct_1, array_test_sub_struct_1);
+    auto sub_struct_view = StructView(array_test_sub_struct_1);
 
     sub_struct_view_of(array_test_super_struct_1,
-                       super_struct_path_properties,
+                       super_struct_view,
                        out{array_test_sub_struct_1},
-                       sub_struct_path_properties);
+                       sub_struct_view);
 
     for (std::size_t i = 0; i < TEST_ARRAY_SIZE; ++i)
     {
