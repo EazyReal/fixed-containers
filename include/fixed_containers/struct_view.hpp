@@ -30,6 +30,8 @@
 #include <utility>
 #include <variant>
 
+#include <iostream>
+
 /**
  * Terminologies
  *
@@ -802,8 +804,9 @@ auto extract_path_properties_of_filtered(
                 }
             }
         },
-        [&]<typename F>(const PathNameChain& /*chain*/, const F& /*field*/)
+        [&]<typename F>(const PathNameChain& chain, const F& /*field*/)
         {
+            std::cout << "out of: " << path_to_string(chain) << std::endl;
             if constexpr (struct_view_detail::Iterable<F>)
             {
                 --dim;
@@ -853,9 +856,28 @@ public:
     template <typename S>
     void add_path(S&& instance, const PathNameChain& path)
     {
+        std::cout << "adding path for: " << path_to_string(path) << std::endl;
         auto path_properties_map = extract_path_properties_of_filtered<S, 1, 1>(
             std::forward<S>(instance), std::optional<FixedSet<PathNameChain, 1>>({path}));
+        std::cout << "finished extracting for: " << path_to_string(path) << std::endl;
+
+        if (!path_properties_map.contains(path))
+        {
+            std::cout << "Failed to extract " << path_to_string(path) << std::endl;
+            assert_or_abort(false);
+        }
+        std::cout << "the max size of the map is: " << path_properties_.static_max_size() << std::endl;
+        std::cout << "the size of the map is: " << path_properties_.size() << std::endl;
+
         auto [_, was_inserted] = path_properties_.try_emplace(path, path_properties_map.at(path));
+        if (!was_inserted)
+        {
+            std::cout << "Failed to insert " << path_to_string(path) << std::endl;
+        }
+        else
+        {
+            std::cout << "Inserted " << path_to_string(path) << std::endl;
+        }
         assert_or_abort(was_inserted);
     }
 
