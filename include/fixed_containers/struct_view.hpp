@@ -30,8 +30,6 @@
 #include <utility>
 #include <variant>
 
-#include <iostream>
-
 /**
  * Terminologies
  *
@@ -249,8 +247,8 @@ template <typename T>
 concept MetadataPrimitive = Primitive<T>;
 
 template <typename T>
-concept MetadataCovered = MetadataOptional<T> || MetadataResizableIterable<T> || MetadataIterable<T> ||
-                          MetadataEnum<T> || MetadataPrimitive<T>;
+concept MetadataCovered = MetadataOptional<T> || MetadataResizableIterable<T> ||
+                          MetadataIterable<T> || MetadataEnum<T> || MetadataPrimitive<T>;
 
 // The following defines the disjoint set of how we recurse
 template <typename T>
@@ -460,12 +458,11 @@ struct MetadataExtractor<T>
         return StructTreeNodeMetadata{
             .metadata_type = metadata_type,
             .detail_type = type_name<Type>(),
-            .call_interface = OptionalCallInterface{
-                .has_value = [](const void* instance)
-                { return static_cast<const Type*>(instance)->has_value(); },
-                .emplace_default =
-                    [](void* instance)
-                { static_cast<Type*>(instance)->emplace();}}};
+            .call_interface =
+                OptionalCallInterface{.has_value = [](const void* instance)
+                                      { return static_cast<const Type*>(instance)->has_value(); },
+                                      .emplace_default = [](void* instance)
+                                      { static_cast<Type*>(instance)->emplace(); }}};
     }
 };
 
@@ -804,9 +801,8 @@ auto extract_path_properties_of_filtered(
                 }
             }
         },
-        [&]<typename F>(const PathNameChain& chain, const F& /*field*/)
+        [&]<typename F>(const PathNameChain& /*chain*/, const F& /*field*/)
         {
-            std::cout << "out of: " << path_to_string(chain) << std::endl;
             if constexpr (struct_view_detail::Iterable<F>)
             {
                 --dim;
@@ -856,28 +852,9 @@ public:
     template <typename S>
     void add_path(S&& instance, const PathNameChain& path)
     {
-        std::cout << "adding path for: " << path_to_string(path) << std::endl;
         auto path_properties_map = extract_path_properties_of_filtered<S, 1, 1>(
             std::forward<S>(instance), std::optional<FixedSet<PathNameChain, 1>>({path}));
-        std::cout << "finished extracting for: " << path_to_string(path) << std::endl;
-
-        if (!path_properties_map.contains(path))
-        {
-            std::cout << "Failed to extract " << path_to_string(path) << std::endl;
-            assert_or_abort(false);
-        }
-        std::cout << "the max size of the map is: " << path_properties_.static_max_size() << std::endl;
-        std::cout << "the size of the map is: " << path_properties_.size() << std::endl;
-
         auto [_, was_inserted] = path_properties_.try_emplace(path, path_properties_map.at(path));
-        if (!was_inserted)
-        {
-            std::cout << "Failed to insert " << path_to_string(path) << std::endl;
-        }
-        else
-        {
-            std::cout << "Inserted " << path_to_string(path) << std::endl;
-        }
         assert_or_abort(was_inserted);
     }
 
@@ -891,7 +868,8 @@ public:
     template <typename S, typename PathSet>
     void add_paths(S&& instance, const PathSet& paths)
     {
-        auto path_properties_map = extract_path_properties_of_filtered(std::forward<S>(instance), paths);
+        auto path_properties_map =
+            extract_path_properties_of_filtered(std::forward<S>(instance), paths);
         for (const auto& [path, path_properties] : path_properties_map)
         {
             auto [_, was_inserted] = path_properties_.try_emplace(path, path_properties);
@@ -992,7 +970,7 @@ void sub_struct_view_of(void* super_struct_base_pointer,
                     std::any_cast<OptionalCallInterface>(path_properties.metadata.call_interface);
                 auto super_api = std::any_cast<OptionalCallInterface>(
                     super_struct_path_properties.metadata.call_interface);
-                if(super_api.has_value(super_struct_field_ptr) && !sub_api.has_value(field_ptr))
+                if (super_api.has_value(super_struct_field_ptr) && !sub_api.has_value(field_ptr))
                 {
                     sub_api.emplace_default(field_ptr);
                 }
