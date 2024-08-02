@@ -11,6 +11,8 @@
 #include "fixed_containers/out.hpp"
 #include "fixed_containers/preconditions.hpp"
 #include "fixed_containers/random_access_iterator.hpp"
+#include "fixed_containers/recursive_reflection.hpp"
+#include "fixed_containers/recursive_reflection_fwd.hpp"
 #include "fixed_containers/reflection.hpp"
 #include "fixed_containers/sequence_container_checking.hpp"
 
@@ -84,6 +86,81 @@ Strategy:
 
 namespace fixed_containers::struct_view_detail
 {
+// TODO: make sure we modify this concept after we support unit constructor and put it under
+// concepts.hpp
+template <typename T>
+concept ReflectionConstructible = ConstexprDefaultConstructible<T>;
+
+template <typename T>
+concept OptionalLike = requires(T t) {
+    typename T::value_type;
+    { t.has_value() } -> std::same_as<bool>;
+    { t.value() } -> std::same_as<typename T::value_type&>;
+    { t.emplace() } -> std::same_as<typename T::value_type&>;
+    { t.reset() } -> std::same_as<void>;
+};
+
+template <typename T>
+concept DurationLike = requires {
+    typename T::rep;
+    typename T::period;
+    typename std::is_arithmetic<typename T::rep>::type;
+    { T::min() } -> std::same_as<T>;
+    { T::max() } -> std::same_as<T>;
+    { T::zero() } -> std::same_as<T>;
+};
+
+template <typename T>
+concept ResizableIterable = requires {
+    typename T::value_type;
+    { T{}.size() } -> std::same_as<std::size_t>;
+    { T{}.capacity() } -> std::same_as<std::size_t>;
+    { T{}.resize(std::declval<std::size_t>()) } -> std::same_as<void>;
+};
+
+// type traits for StdArray
+template <typename T>
+struct IsStdArray : std::false_type
+{
+};
+
+template <typename T, std::size_t MAXIMUM_SIZE>
+struct IsStdArray<std::array<T, MAXIMUM_SIZE>> : std::true_type
+{
+};
+
+template <typename T>
+concept StdArray = IsStdArray<T>::value;
+
+template <typename T>
+concept Bitset = requires { requires std::same_as<T, std::bitset<T{}.size()>>; };
+
+// details of supported primitives
+template <typename T>
+concept EnumValue = std::is_enum_v<T>;
+
+template <typename T>
+concept EnumView = std::is_same_v<T, std::string_view>;
+
+// The list of supported primitives
+template <typename T>
+concept PrimitiveValue = std::is_arithmetic_v<T> || DurationLike<T> || Bitset<T>;
+
+template <typename T>
+concept PrimitiveView = std::is_pointer_v<T> && PrimitiveValue<std::remove_pointer_t<T>>;
+
+template <typename T>
+concept Primitive = PrimitiveValue<T> || PrimitiveView<T>;
+
+// We want to consider contiguous sized range that are not optional or bitset as iterable in the
+// scope of this library
+template <typename T>
+concept Iterable = (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) &&
+                   (!OptionalLike<T> && !Bitset<T> && !std::is_same_v<T, std::string_view>);
+}  // namespace fixed_containers::struct_view_detail
+
+namespace fixed_containers::struct_view_detail
+{
 
 inline constexpr std::size_t MAX_NUM_PATHS = 100;
 inline constexpr std::size_t MAX_PATH_LENGTH = 16;
@@ -145,90 +222,6 @@ struct FixedTensorView
     constexpr bool operator==(const FixedTensorView&) const = default;
 };
 
-// type traits for StdArray
-template <typename T>
-struct IsStdArray : std::false_type
-{
-};
-
-template <typename T, std::size_t MAXIMUM_SIZE>
-struct IsStdArray<std::array<T, MAXIMUM_SIZE>> : std::true_type
-{
-};
-
-// Recursion Strategy Concepts
-
-// TODO: make sure we modify this concept after we support unit constructor and put it under
-// concepts.hpp
-template <typename T>
-concept ReflectionConstructible = ConstexprDefaultConstructible<T>;
-
-// special cases for supported private types
-template <typename T>
-concept OptionalLike = requires(T t) {
-    typename T::value_type;
-    { t.has_value() } -> std::same_as<bool>;
-    { t.value() } -> std::same_as<typename T::value_type&>;
-    { t.emplace() } -> std::same_as<typename T::value_type&>;
-    { t.reset() } -> std::same_as<void>;
-};
-
-template <typename T>
-concept DurationLike = requires {
-    typename T::rep;
-    typename T::period;
-    typename std::is_arithmetic<typename T::rep>::type;
-    { T::min() } -> std::same_as<T>;
-    { T::max() } -> std::same_as<T>;
-    { T::zero() } -> std::same_as<T>;
-};
-
-template <typename T>
-concept ResizableIterable = requires {
-    typename T::value_type;
-    { T{}.size() } -> std::same_as<std::size_t>;
-    { T{}.capacity() } -> std::same_as<std::size_t>;
-    { T{}.resize(std::declval<std::size_t>()) } -> std::same_as<void>;
-};
-
-template <typename T>
-concept StdArray = IsStdArray<T>::value;
-
-template <typename T>
-concept Bitset = requires { requires std::same_as<T, std::bitset<T{}.size()>>; };
-
-// details of supported primitives
-template <typename T>
-concept EnumValue = std::is_enum_v<T>;
-
-template <typename T>
-concept EnumView = std::is_same_v<T, std::string_view>;
-
-// The list of supported primitives
-template <typename T>
-concept PrimitiveValue = std::is_arithmetic_v<T> || DurationLike<T> || Bitset<T>;
-
-template <typename T>
-concept PrimitiveView = std::is_pointer_v<T> && PrimitiveValue<std::remove_pointer_t<T>>;
-
-template <typename T>
-concept Primitive = PrimitiveValue<T> || PrimitiveView<T>;
-
-// TODO: remove the need of ResizableIterable<T> as special case by implementing trait for
-// ResizableIterableView
-// We want to consider contiguous sized range that are not optional or bitset as iterable in the
-// scope of this library
-template <typename T>
-concept Iterable =
-    ((std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) || ResizableIterable<T>) &&
-    (!OptionalLike<T> && !Bitset<T> && !std::is_same_v<T, std::string_view>);
-
-// allow user to specify types they do not wish to reflect into by template specialization
-template <typename T>
-struct NoRecurse : std::false_type
-{
-};
-
 // The following defines the disjoint set of how the metadata is stored and used
 // TODO: should befine tree/false for provider and consumer
 template <typename T>
@@ -249,161 +242,6 @@ concept MetadataPrimitive = Primitive<T>;
 template <typename T>
 concept MetadataCovered = MetadataOptional<T> || MetadataResizableIterable<T> ||
                           MetadataIterable<T> || MetadataEnum<T> || MetadataPrimitive<T>;
-
-// The following defines the disjoint set of how we recurse
-template <typename T>
-concept StrategyIterable = Iterable<T> && ReflectionConstructible<T> && !NoRecurse<T>::value;
-
-template <typename T>
-concept StrategyOptional = OptionalLike<T> && ReflectionConstructible<T> && !NoRecurse<T>::value;
-
-template <typename T>
-concept StrategyPrimitive = (Primitive<T> || EnumValue<T> || EnumView<T>) && !NoRecurse<T>::value;
-
-template <typename T>
-concept StrategyReflect =
-    reflection::Reflectable<T> &&
-    !(StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T>) && !NoRecurse<T>::value;
-
-template <typename T>
-concept StrategyCovered =
-    StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T> || StrategyReflect<T>;
-
-template <typename S, typename PreFunction, typename PostFunction>
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain);
-
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyOptional<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain);
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyIterable<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain);
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyReflect<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain);
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyPrimitive<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain);
-
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyOptional<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain)
-{
-    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
-    // recurse into `value()` if exists, construct a dummy instance at `value()` if not exists
-    // unsafe cast to non-const
-    // However, we only construct when the optional has no value and destruct at the end of
-    // recursion
-    chain->push_back(OPTIONAL_PATH_NAME);
-    using InstanceType = decltype(instance);
-    bool constructed{false};
-    if (!instance.has_value())
-    {
-        const_cast<std::decay_t<InstanceType>*>(std::addressof(instance))->emplace();
-        constructed = true;
-    }
-    assert_or_abort(instance.has_value());
-    for_each_path_dfs_helper(instance.value(),
-                             std::forward<PreFunction>(pre_fn),
-                             std::forward<PostFunction>(post_fn),
-                             fixed_containers::in_out{*chain});
-    if (constructed)
-    {
-        const_cast<std::decay_t<InstanceType>*>(std::addressof(instance))->reset();
-    }
-    chain->pop_back();
-    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
-}
-
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyIterable<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain)
-{
-    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
-    // recurse into an element instance, construct a dummy instance at `begin()` if the range is
-    // empty
-    chain->push_back(ITERABLE_PATH_NAME);
-    bool constructed{false};
-    if (std::ranges::empty(instance))
-    {
-        std::ranges::construct_at(std::ranges::data(instance));
-        constructed = true;
-    }
-    for_each_path_dfs_helper(*std::ranges::data(instance),
-                             std::forward<PreFunction>(pre_fn),
-                             std::forward<PostFunction>(post_fn),
-                             fixed_containers::in_out{*chain});
-    if (constructed)
-    {
-        std::ranges::destroy_at(std::ranges::data(instance));
-    }
-    chain->pop_back();
-    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
-}
-
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyReflect<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain)
-{
-    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
-    reflection::for_each_field(
-        std::forward<S>(instance),
-        [&pre_fn, &post_fn, &chain]<typename T>(const std::string_view& name, T& field)
-        {
-            chain->push_back(name);
-            for_each_path_dfs_helper(field,
-                                     std::forward<PreFunction>(pre_fn),
-                                     std::forward<PostFunction>(post_fn),
-                                     fixed_containers::in_out{*chain});
-            chain->pop_back();
-        });
-    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
-}
-
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(StrategyPrimitive<std::decay_t<S>>)
-constexpr void for_each_path_dfs_helper(S&& instance,
-                                        PreFunction&& pre_fn,
-                                        PostFunction&& post_fn,
-                                        fixed_containers::in_out<PathNameChain> chain)
-{
-    std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<S>(instance));
-    std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<S>(instance));
-}
-
-template <typename S, typename PreFunction, typename PostFunction>
-constexpr void for_each_path_dfs_helper(S&& /*instance*/,
-                                        PreFunction&& /*pre_fn*/,
-                                        PostFunction&& /*post_fn*/,
-                                        fixed_containers::in_out<PathNameChain> /*chain*/)
-{
-    // TODO: cover or resolve all possibilities
-    // static_assert(std::is_same_v<S, void>, Not covered by current recursion strategies);
-}
 
 struct OptionalCallInterface
 {
@@ -653,34 +491,11 @@ constexpr std::string_view type_name_without_namespace()
     return (pos != std::string_view::npos) ? str.substr(pos + 1) : str;
 }
 
-// This function iterates over all paths of a given struct and calls a pre and post function for
-// each field.
-// The function cannot be const because we need to create a dummy instance inplace for
-// `std::optional`
-template <typename S, typename PreFunction, typename PostFunction>
-    requires(struct_view_detail::StrategyCovered<std::decay_t<S>>)
-constexpr void for_each_path_dfs(S&& instance, PreFunction&& pre_fn, PostFunction&& post_fn)
-{
-    PathNameChain chain{};
-    struct_view_detail::for_each_path_dfs_helper(std::forward<S>(instance),
-                                                 std::forward<PreFunction>(pre_fn),
-                                                 std::forward<PostFunction>(post_fn),
-                                                 fixed_containers::in_out{chain});
-}
-
-template <typename S, typename Function>
-    requires(struct_view_detail::StrategyCovered<std::decay_t<S>>)
-constexpr void for_each_path_dfs(S&& instance, Function&& func)
-{
-    for_each_path_dfs(
-        std::forward<S>(instance), std::forward<Function>(func), [](const auto&, auto&) {});
-}
-
 template <typename S>
 constexpr std::size_t path_count_of(S&& instance = {})
 {
     std::size_t count = 0;
-    for_each_path_dfs(instance, [&count](const auto&, auto&) { ++count; });
+    recursive_reflection::for_each_path_dfs(instance, [&count](const auto&, auto&) { ++count; });
     return count;
 }
 
@@ -744,9 +559,9 @@ auto extract_paths_of(S&& instance = {})
 {
     PathSet<MAXIMUM_SIZE> paths{};
 
-    for_each_path_dfs(instance,
-                      [&]<typename F>(const PathNameChain& chain, const F& /*field*/)
-                      { paths.insert(chain); });
+    recursive_reflection::for_each_path_dfs(
+        instance,
+        [&]<typename F>(const PathNameChain& chain, const F& /*field*/) { paths.insert(chain); });
     return paths;
 }
 
@@ -761,7 +576,7 @@ auto extract_path_properties_of_filtered(
     Capacity capacity;
     Strides strides;
 
-    for_each_path_dfs(
+    recursive_reflection::for_each_path_dfs(
         instance,  // pass in lvalue
         [&]<typename F>(const PathNameChain& chain, const F& field)
         {

@@ -236,7 +236,7 @@ TEST(StructView, SubStructViewOfEnum)
 {
     static_assert(struct_view_detail::EnumValue<EnumSuperEnum>);
     static_assert(struct_view_detail::EnumView<std::string_view>);
-    static_assert(!struct_view_detail::StrategyIterable<std::string_view>);
+    static_assert(!recursive_reflection_detail::StrategyIterable<std::string_view>);
 
     auto enum_super_struct_1 = EnumSuperStruct{};
     auto enum_sub_struct_1 = EnumSubStruct{};
@@ -783,7 +783,7 @@ struct PrivateClassHolder
     PrivateClass private_class;
 };
 }  // namespace test_namespace
-namespace fixed_containers::struct_view_detail
+namespace fixed_containers::recursive_reflection_detail
 {
 
 template <>
@@ -791,7 +791,7 @@ struct StrategyNoDefault<test_namespace::PrivateClass> : std::true_type
 {
 };
 
-}  // namespace fixed_containers::struct_view_detail
+}  // namespace fixed_containers::recursive_reflection_detail
 
 TEST(StructView, StrategyNoDefault)
 {

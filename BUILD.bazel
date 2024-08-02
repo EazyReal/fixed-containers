@@ -775,6 +775,32 @@ cc_library(
 )
 
 cc_library(
+    name = "recursive_reflection_fwd",
+    hdrs = ["include/fixed_containers/recursive_reflection_fwd.hpp"],
+    includes = includes_config(),
+    strip_include_prefix = strip_include_prefix_config(),
+    deps = [
+        ":in_out",
+        ":reflection",
+    ],
+    copts = ["-std=c++20"],
+)
+
+cc_library(
+    name = "recursive_reflection",
+    hdrs = ["include/fixed_containers/recursive_reflection.hpp"],
+    includes = includes_config(),
+    strip_include_prefix = strip_include_prefix_config(),
+    deps = [
+        ":in_out",
+        ":reflection",
+        ":recursive_reflection_fwd",
+        ":type_name",
+    ],
+    copts = ["-std=c++20"],
+)
+
+cc_library(
     name = "reference_storage",
     hdrs = ["include/fixed_containers/reference_storage.hpp"],
     includes = includes_config(),
@@ -871,6 +897,8 @@ cc_library(
         ":out",
         ":random_access_iterator",
         ":reflection",
+        ":recursive_reflection_fwd",
+        ":recursive_reflection",
         ":type_name",
         ":preconditions", 
         ":sequence_container_checking",

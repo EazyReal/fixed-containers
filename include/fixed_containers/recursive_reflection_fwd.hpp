@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fixed_containers/in_out.hpp"
 #include "fixed_containers/reflection.hpp"
 
 namespace fixed_containers::recursive_reflection_detail
