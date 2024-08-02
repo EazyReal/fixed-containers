@@ -787,13 +787,13 @@ namespace fixed_containers::struct_view_detail
 {
 
 template <>
-struct NoRecurse<test_namespace::PrivateClass> : std::true_type
+struct StrategyNoDefault<test_namespace::PrivateClass> : std::true_type
 {
 };
 
 }  // namespace fixed_containers::struct_view_detail
 
-TEST(StructView, NoRecurse)
+TEST(StructView, StrategyNoDefault)
 {
     test_namespace::PrivateClassHolder private_class_holder{};
     fixed_containers::struct_view::StructView struct_view(private_class_holder);

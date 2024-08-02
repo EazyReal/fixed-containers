@@ -22,7 +22,17 @@ namespace fixed_containers::recursive_reflection
 using PathNameChain = recursive_reflection_detail::PathNameChain;
 
 template <typename S, typename PreFunction, typename PostFunction>
-constexpr void for_each_path_recursive_depth_first_order(
-    S&& reflected_object, PreFunction&& pre_fn, PostFunction&& post_fn, const PathNameChain& chain = {});
+constexpr void for_each_path_dfs_helper(S&& reflected_object,
+                                        PreFunction&& pre_fn,
+                                        PostFunction&& post_fn,
+                                        in_out<PathNameChain> chain);
+
+template <typename S, typename PreFunction, typename PostFunction>
+constexpr void for_each_path_dfs(S&& reflected_object,
+                                 PreFunction&& pre_fn,
+                                 PostFunction&& post_fn);
+
+template <typename S, typename PreFunction>
+constexpr void for_each_path_dfs(S&& reflected_object, PreFunction&& pre_fn);
 
 }  // namespace fixed_containers::recursive_reflection
