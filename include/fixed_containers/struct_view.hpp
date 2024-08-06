@@ -35,19 +35,21 @@
 /**
  * Terminologies
  *
- * Path vs Field:
- * A `PathNameChain` is a sequence of struct field names that leads to a primitive field in the
- * struct, with a caveat that when encountering an iterable, we do not include the index as part of
- * the path, instead we use `data` to represent all the elements in the iterable.
- * `for_each_path_dfs` is a recursive function that iterates over all the paths in the struct.
+ * Path:
+ * A `Path` is identified with a `PathNameChain`, a sequence of struct field names that leads to a
+ * primitive field in the struct, with a caveat that when encountering an iterable, we do not
+ * include the index as part of the path, instead we use `data[:]` to represent all the elements in
+ * the iterable.
  *
- * Accessing a field by path:
- * We defer all the indexing to the end of the path,
- * where we can then use the `offset.get_offset(Indices indices)` function to get the offset of the
- * field.
+ * `for_each_path_dfs` is a recursive function that iterates over all the paths in the
+ * struct.
+ *
+ * A `PathProperties` consists of a `StructTreeNodeMetadata` and a `FixedTensorView`, each
+ * responsible for keeping information of the data type and how to get the raw pointer to a field.
  *
  * `StructView`:
- * A `StructView` is a view of a struct that is basically a mapping from a path to its properties.
+ * A `StructView` is a view of a struct that is basically a mapping from a path to its
+ * `PathProperties`.
  *
  * `sub_struct_view_of`
  * `sub_struct_view_of` create a view of the super struct object in the sub struct object.
@@ -67,100 +69,23 @@
  */
 
 /**
- * @brief To customize
+ * @brief To customize bahavior of reflection and struct_view for a type
  *
  * Group:
-Metadata:
-- MetadaConcept (add to exclusion list of default handling as well)
-- MetadataExtractor Specialization
-    - MetadataType
-    -  CallInterface
-- Reader (how to get signal)
-- Bridger (how to bridge signal)
-- Writer (how to generate singal)
-
-Strategy:
-- StrategyConcept (add to exclusion list of default handling as well)
-- Walker Specialization
+ * Metadata:
+ * - define corresponding MetadaConcept and mark it MetadataNoDefault
+ * - MetadataExtractor Specialization
+ *     - MetadataType
+ *     - CallInterface
+ * Strategy:
+ * - define corresponding StrategyConcept and mark it StrategyNoDefault
+ * - ReflectionHandler Specialization
  */
 
 namespace fixed_containers::struct_view_detail
 {
-// TODO: make sure we modify this concept after we support unit constructor and put it under
-// concepts.hpp
-template <typename T>
-concept ReflectionConstructible = ConstexprDefaultConstructible<T>;
 
-template <typename T>
-concept OptionalLike = requires(T t) {
-    typename T::value_type;
-    { t.has_value() } -> std::same_as<bool>;
-    { t.value() } -> std::same_as<typename T::value_type&>;
-    { t.emplace() } -> std::same_as<typename T::value_type&>;
-    { t.reset() } -> std::same_as<void>;
-};
-
-template <typename T>
-concept DurationLike = requires {
-    typename T::rep;
-    typename T::period;
-    typename std::is_arithmetic<typename T::rep>::type;
-    { T::min() } -> std::same_as<T>;
-    { T::max() } -> std::same_as<T>;
-    { T::zero() } -> std::same_as<T>;
-};
-
-template <typename T>
-concept ResizableIterable = requires {
-    typename T::value_type;
-    { T{}.size() } -> std::same_as<std::size_t>;
-    { T{}.capacity() } -> std::same_as<std::size_t>;
-    { T{}.resize(std::declval<std::size_t>()) } -> std::same_as<void>;
-};
-
-// type traits for StdArray
-template <typename T>
-struct IsStdArray : std::false_type
-{
-};
-
-template <typename T, std::size_t MAXIMUM_SIZE>
-struct IsStdArray<std::array<T, MAXIMUM_SIZE>> : std::true_type
-{
-};
-
-template <typename T>
-concept StdArray = IsStdArray<T>::value;
-
-template <typename T>
-concept Bitset = requires { requires std::same_as<T, std::bitset<T{}.size()>>; };
-
-// details of supported primitives
-template <typename T>
-concept EnumValue = std::is_enum_v<T>;
-
-template <typename T>
-concept EnumView = std::is_same_v<T, std::string_view>;
-
-// The list of supported primitives
-template <typename T>
-concept PrimitiveValue = std::is_arithmetic_v<T> || DurationLike<T> || Bitset<T>;
-
-template <typename T>
-concept PrimitiveView = std::is_pointer_v<T> && PrimitiveValue<std::remove_pointer_t<T>>;
-
-template <typename T>
-concept Primitive = PrimitiveValue<T> || PrimitiveView<T>;
-
-// We want to consider contiguous sized range that are not optional or bitset as iterable in the
-// scope of this library
-template <typename T>
-concept Iterable = (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) &&
-                   (!OptionalLike<T> && !Bitset<T> && !std::is_same_v<T, std::string_view>);
-}  // namespace fixed_containers::struct_view_detail
-
-namespace fixed_containers::struct_view_detail
-{
+using namespace fixed_containers::recursive_reflection_detail;
 
 inline constexpr std::size_t MAX_NUM_PATHS = 100;
 inline constexpr std::size_t MAX_PATH_LENGTH = 16;
@@ -223,25 +148,27 @@ struct FixedTensorView
 };
 
 // The following defines the disjoint set of how the metadata is stored and used
-// TODO: should befine tree/false for provider and consumer
+// We allow user to specify types they want to customize by template specialization
 template <typename T>
-concept MetadataOptional = OptionalLike<T>;
+struct MetadataNoDefault : std::false_type
+{
+};
 
 template <typename T>
-concept MetadataResizableIterable = ResizableIterable<T>;
+concept MetadataOptional = IsOptional<T> && !MetadataNoDefault<T>::value;
 
 template <typename T>
-concept MetadataIterable = Iterable<T> && !MetadataResizableIterable<T>;
+concept MetadataResizableIterable = ResizableIterable<T> && !MetadataNoDefault<T>::value;
 
 template <typename T>
-concept MetadataEnum = EnumValue<T> || EnumView<T>;
+concept MetadataIterable =
+    Iterable<T> && !MetadataResizableIterable<T> && !MetadataNoDefault<T>::value;
 
 template <typename T>
-concept MetadataPrimitive = Primitive<T>;
+concept MetadataEnum = (EnumValue<T> || EnumView<T>) && !MetadataNoDefault<T>::value;
 
 template <typename T>
-concept MetadataCovered = MetadataOptional<T> || MetadataResizableIterable<T> ||
-                          MetadataIterable<T> || MetadataEnum<T> || MetadataPrimitive<T>;
+concept MetadataPrimitive = Primitive<T> && !MetadataNoDefault<T>::value;
 
 struct OptionalCallInterface
 {
@@ -435,7 +362,7 @@ constexpr void for_each_index_of_path_helper(void* base_pointer,
         return;
     }
 
-    // TODO: dynamic resize with tree
+    // TODO: dynamic realized_size with tree-style implementation
     std::size_t realized_size = offset.capacity[DIM];
 
     for (std::size_t i = 0; i < realized_size; ++i)
@@ -483,6 +410,9 @@ using ResizableInterableCallInterface = struct_view_detail::ResizableInterableCa
 using OptionalCallInterface = struct_view_detail::OptionalCallInterface;
 using EnumCallInterface = struct_view_detail::EnumCallInterface;
 
+using recursive_reflection::path_from_string;
+using recursive_reflection::path_to_string;
+
 template <typename T>
 constexpr std::string_view type_name_without_namespace()
 {
@@ -504,64 +434,15 @@ using PathPropertiesMap = FixedMap<PathNameChain, PathProperties, MAXIMUM_SIZE>;
 template <std::size_t MAXIMUM_SIZE = MAX_NUM_PATHS>
 using PathSet = FixedSet<PathNameChain, MAXIMUM_SIZE>;
 
-// use C++17 for older projects
-inline PathNameChain path_from_string(const std::string_view& path_name_chain_string)
-{
-    if (path_name_chain_string.empty())
-    {
-        return PathNameChain();
-    }
-
-    std::vector<std::string_view> path_components;
-    size_t start = 0;
-    size_t end = path_name_chain_string.find(struct_view_detail::PATH_DELIMITER);
-
-    while (end != std::string_view::npos)
-    {
-        path_components.emplace_back(path_name_chain_string.substr(start, end - start));
-        start = end + 1;
-        end = path_name_chain_string.find(struct_view_detail::PATH_DELIMITER, start);
-    }
-
-    if (start < path_name_chain_string.length())
-    {
-        path_components.emplace_back(path_name_chain_string.substr(start));
-    }
-
-    return PathNameChain(path_components.begin(), path_components.end());
-}
-
-inline std::string path_to_string(const PathNameChain& path_name_chain)
-{
-    if (path_name_chain.empty())
-    {
-        return {};
-    }
-
-    std::string result;
-    bool first = true;
-
-    for (const auto& component : path_name_chain)
-    {
-        if (!first)
-        {
-            result += struct_view_detail::PATH_DELIMITER;
-        }
-        result += component;
-        first = false;
-    }
-
-    return result;
-}
-
 template <typename S, std::size_t MAXIMUM_SIZE = MAX_NUM_PATHS>
 auto extract_paths_of(S&& instance = {})
 {
     PathSet<MAXIMUM_SIZE> paths{};
 
     recursive_reflection::for_each_path_dfs(
-        instance,
-        [&]<typename F>(const PathNameChain& chain, const F& /*field*/) { paths.insert(chain); });
+        std::forward<S>(instance),  // need to pass in lvalue
+        [&]<typename F>(const PathNameChain& chain, F&& /*field*/) { paths.insert(chain); },
+        [&]<typename F>(const PathNameChain&, F&& /*field*/) {});
     return paths;
 }
 
@@ -569,7 +450,7 @@ template <typename S,
           std::size_t MAXIMUM_SIZE_IN = MAX_NUM_PATHS,
           std::size_t MAXIMUM_SIZE_OUT = MAX_NUM_PATHS>
 auto extract_path_properties_of_filtered(
-    S&& instance, const std::optional<PathSet<MAXIMUM_SIZE_IN>>& registered_set = std::nullopt)
+    S&& instance = {}, const std::optional<PathSet<MAXIMUM_SIZE_IN>>& registered_set = std::nullopt)
 {
     PathPropertiesMap<MAXIMUM_SIZE_OUT> paths{};
     std::size_t dim = 0;
@@ -577,7 +458,8 @@ auto extract_path_properties_of_filtered(
     Strides strides;
 
     recursive_reflection::for_each_path_dfs(
-        instance,  // pass in lvalue
+        instance,  // need to pass the param in as lvalue since the applied function takes in `const
+                   // F& field`
         [&]<typename F>(const PathNameChain& chain, const F& field)
         {
             if constexpr (struct_view_detail::MetadataExtractor<F>::do_extract)
@@ -653,15 +535,15 @@ public:
 
     template <typename S>
     StructView(S&& instance)
-      : path_properties_(extract_path_properties_of(instance))
+      : path_properties_(extract_path_properties_of(std::forward<S>(instance)))
     {
     }
     template <typename SuperStruct, typename SubStruct>
     StructView(SuperStruct&& super_struct, SubStruct&& sub_struct)
     {
-        auto sub_struct_paths = extract_paths_of(sub_struct);
-        path_properties_ =
-            extract_path_properties_of_filtered(super_struct, std::optional{sub_struct_paths});
+        auto sub_struct_paths = extract_paths_of(std::forward<SubStruct>(sub_struct));
+        path_properties_ = extract_path_properties_of_filtered(
+            std::forward<SuperStruct>(super_struct), std::optional{std::move(sub_struct_paths)});
     }
 
     template <typename S>
@@ -708,11 +590,11 @@ public:
 
     const PathPropertiesMap<MAXIMUM_SIZE>& get_path_map_ref() const { return path_properties_; }
 
-    // TODO: add error handling
     const void* get_field(const void* instance,
                           const PathNameChain& path,
                           const Indices& indices) const
     {
+        // TODO: do we let it crash when the path_properties is not there?
         auto path_properties = path_properties_.at(path);
         return struct_view_detail::get_field<const void*, const void*>(
             instance, path_properties, indices);
@@ -725,7 +607,6 @@ private:
     PathPropertiesMap<MAXIMUM_SIZE> path_properties_;
 };
 
-// TODO: support return type
 template <typename Function, std::size_t MAXIMUM_SIZE = MAX_NUM_PATHS>
 void for_each_field(const StructView<MAXIMUM_SIZE>& struct_view,
                     void* base_pointer,
@@ -759,10 +640,6 @@ void sub_struct_view_of(void* super_struct_base_pointer,
                 struct_view_detail::get_field<const void*, const void*>(
                     super_struct_base_pointer, super_struct_path_properties, indices);
 
-            // TODO: make extensible
-            // make the control flow disjoint
-            // make this getting a provider and a consumer handler and match them intead of putting
-            // all the logics here
             if (super_struct_path_properties.metadata.metadata_type ==
                 struct_view_detail::ITERABLE_RESIZABLE)
             {
@@ -805,7 +682,7 @@ void sub_struct_view_of(void* super_struct_base_pointer,
             else if (super_struct_path_properties.metadata.metadata_type ==
                      struct_view_detail::PRIMITIVE)
             {
-                // check the detail_type is compatiable, need to consider pointer and qualifiers
+                // check the detail_types are compatiable, need to consider pointer and qualifiers
                 // TODO: optimization for string_view pointer comparison to O(1) since we know the
                 // structure
                 assert_or_abort(path_properties.metadata.detail_type.find(

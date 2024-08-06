@@ -159,9 +159,9 @@ struct OptionalSubStruct
 
 TEST(StructView, SubStructViewOfOptional)
 {
-    static_assert(struct_view_detail::OptionalLike<std::optional<int>>);
-    static_assert(struct_view_detail::OptionalLike<std::optional<std::optional<int>>>);
-    static_assert(struct_view_detail::OptionalLike<std::optional<int>>);
+    static_assert(struct_view_detail::IsOptional<std::optional<int>>);
+    static_assert(struct_view_detail::IsOptional<std::optional<std::optional<int>>>);
+    static_assert(struct_view_detail::IsOptional<std::optional<int>>);
 
     auto optional_super_struct_1 = OptionalSuperStruct{};
     auto optional_sub_struct_1 = OptionalSubStruct{};
@@ -787,9 +787,7 @@ namespace fixed_containers::recursive_reflection_detail
 {
 
 template <>
-struct StrategyNoDefault<test_namespace::PrivateClass> : std::true_type
-{
-};
+inline constexpr bool StrategyNoDefault<test_namespace::PrivateClass> = true;
 
 }  // namespace fixed_containers::recursive_reflection_detail
 

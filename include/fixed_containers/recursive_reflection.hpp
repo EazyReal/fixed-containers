@@ -10,8 +10,8 @@
 // This library aims to provide a reflection strategy for recursive reflection into a type.
 // We provide default reflection strategy for primitives, optional, iterable and reflectable types.
 // User can also extend the reflection strategy by providing a custom reflection strategy for a
-// type. We even allow overriding default reflection strategy for a type by providing a StrategyNoDefault
-// specialization and a custom reflection strategy.
+// type. We even allow overriding default reflection strategy for a type by providing a
+// StrategyNoDefault specialization and a custom reflection strategy.
 
 // constants
 namespace fixed_containers::recursive_reflection_detail
@@ -28,15 +28,6 @@ namespace fixed_containers::recursive_reflection_detail
 // concepts.hpp
 template <typename T>
 concept ReflectionConstructible = ConstexprDefaultConstructible<T>;
-
-template <typename T>
-concept OptionalLike = requires(T t) {
-    typename T::value_type;
-    { t.has_value() } -> std::same_as<bool>;
-    { t.value() } -> std::same_as<typename T::value_type&>;
-    { t.emplace() } -> std::same_as<typename T::value_type&>;
-    { t.reset() } -> std::same_as<void>;
-};
 
 template <typename T>
 concept DurationLike = requires {
@@ -56,19 +47,14 @@ concept ResizableIterable = requires {
     { T{}.resize(std::declval<std::size_t>()) } -> std::same_as<void>;
 };
 
-// type traits for StdArray
 template <typename T>
-struct IsStdArray : std::false_type
-{
-};
-
-template <typename T, std::size_t MAXIMUM_SIZE>
-struct IsStdArray<std::array<T, MAXIMUM_SIZE>> : std::true_type
-{
-};
+inline constexpr bool IsOptionalImpl = false;
 
 template <typename T>
-concept StdArray = IsStdArray<T>::value;
+inline constexpr bool IsOptionalImpl<std::optional<T>> = true;
+
+template <typename T>
+concept IsOptional = IsOptionalImpl<T>;
 
 template <typename T>
 concept Bitset = requires { requires std::same_as<T, std::bitset<T{}.size()>>; };
@@ -78,7 +64,7 @@ template <typename T>
 concept EnumValue = std::is_enum_v<T>;
 
 template <typename T>
-concept EnumView = std::is_same_v<T, std::string_view>;
+concept EnumView = std::same_as<T, std::string_view>;
 
 // The list of supported primitives
 template <typename T>
@@ -90,38 +76,48 @@ concept PrimitiveView = std::is_pointer_v<T> && PrimitiveValue<std::remove_point
 template <typename T>
 concept Primitive = PrimitiveValue<T> || PrimitiveView<T>;
 
-// We want to consider contiguous sized range that are not optional or bitset as iterable in the
-// scope of this library
+// exclude some contiguous sized ranges that we do not want to consider as Iterable
+// use inline constexpr bool for customizability
 template <typename T>
-concept Iterable = (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) &&
-                   (!OptionalLike<T> && !Bitset<T> && !std::is_same_v<T, std::string_view>);
+inline constexpr bool NotConsideredIterable = false;
+
+template <>
+inline constexpr bool NotConsideredIterable<std::string_view> = true;
+
+template <IsOptional T>
+inline constexpr bool NotConsideredIterable<T> = true;
+
+template <Bitset T>
+inline constexpr bool NotConsideredIterable<T> = true;
+
+template <typename T>
+concept Iterable =
+    (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) && !NotConsideredIterable<T>;
 }  // namespace fixed_containers::recursive_reflection_detail
 
 // reflection strategy concepts
 namespace fixed_containers::recursive_reflection_detail
 {
 
-// TODO: rename to NoDefaultStrategy
-// allow user to specify types they do not wish to reflect into by template specialization
+// The following defines the disjoint set of how we handle reflection of a type
+// We allow user to specify types they want to customize by template specialization
 template <typename T>
-struct StrategyNoDefault : std::false_type
-{
-};
+inline constexpr bool StrategyNoDefault = false;
 
 // The following defines the disjoint set of how we recurse
 template <typename T>
-concept StrategyIterable = Iterable<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>::value;
+concept StrategyIterable = Iterable<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>;
 
 template <typename T>
-concept StrategyOptional = OptionalLike<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>::value;
+concept StrategyOptional = IsOptional<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>;
 
 template <typename T>
-concept StrategyPrimitive = (Primitive<T> || EnumValue<T> || EnumView<T>) && !StrategyNoDefault<T>::value;
+concept StrategyPrimitive = (Primitive<T> || EnumValue<T> || EnumView<T>) && !StrategyNoDefault<T>;
 
 template <typename T>
 concept StrategyReflect =
-    reflection::Reflectable<T> &&
-    !(StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T>) && !StrategyNoDefault<T>::value;
+    reflection::Reflectable<T> && ReflectionConstructible<T> &&
+    !(StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T>) && !StrategyNoDefault<T>;
 
 }  // namespace fixed_containers::recursive_reflection_detail
 
@@ -256,6 +252,56 @@ struct ReflectionHandler<S>
 namespace fixed_containers::recursive_reflection
 {
 
+// use C++17 for older projects
+inline PathNameChain path_from_string(const std::string_view& path_name_chain_string)
+{
+    if (path_name_chain_string.empty())
+    {
+        return PathNameChain();
+    }
+
+    std::vector<std::string_view> path_components;
+    size_t start = 0;
+    size_t end = path_name_chain_string.find(recursive_reflection_detail::PATH_DELIMITER);
+
+    while (end != std::string_view::npos)
+    {
+        path_components.emplace_back(path_name_chain_string.substr(start, end - start));
+        start = end + 1;
+        end = path_name_chain_string.find(recursive_reflection_detail::PATH_DELIMITER, start);
+    }
+
+    if (start < path_name_chain_string.length())
+    {
+        path_components.emplace_back(path_name_chain_string.substr(start));
+    }
+
+    return PathNameChain(path_components.begin(), path_components.end());
+}
+
+inline std::string path_to_string(const PathNameChain& path_name_chain)
+{
+    if (path_name_chain.empty())
+    {
+        return {};
+    }
+
+    std::string result;
+    bool first = true;
+
+    for (const auto& component : path_name_chain)
+    {
+        if (!first)
+        {
+            result += recursive_reflection_detail::PATH_DELIMITER;
+        }
+        result += component;
+        first = false;
+    }
+
+    return result;
+}
+
 /*
  * This function recursively reflects into a type. (for each path)
  * The function calls corresponding handler to decide how to recursively reflect into the type.
@@ -282,29 +328,21 @@ template <typename S, typename PreFunction, typename PostFunction>
 constexpr void for_each_path_dfs(S&& reflected_object, PreFunction&& pre_fn, PostFunction&& post_fn)
 {
     PathNameChain chain = {};
-    using Handler = recursive_reflection_detail::ReflectionHandler<std::decay_t<S>>;
-    if constexpr (Handler::reflectable)
-    {
-        Handler::reflect_into(std::forward<S>(reflected_object),
-                              std::forward<PreFunction>(pre_fn),
-                              std::forward<PostFunction>(post_fn),
-                              in_out{chain});
-    }
+    for_each_path_dfs_helper(std::forward<S>(reflected_object),
+                             std::forward<PreFunction>(pre_fn),
+                             std::forward<PostFunction>(post_fn),
+                             in_out{chain});
 }
 
 template <typename S, typename PreFunction>
 constexpr void for_each_path_dfs(S&& reflected_object, PreFunction&& pre_fn)
 {
     PathNameChain chain = {};
-    using Handler = recursive_reflection_detail::ReflectionHandler<std::decay_t<S>>;
-    if constexpr (Handler::reflectable)
-    {
-        Handler::reflect_into(
-            std::forward<S>(reflected_object),
-            std::forward<PreFunction>(pre_fn),
-            [](const auto&, auto&) {},
-            in_out{chain});
-    }
+    auto dummy_function = [](const auto&, auto&) {};
+    for_each_path_dfs_helper(std::forward<S>(reflected_object),
+                             std::forward<PreFunction>(pre_fn),
+                             dummy_function,
+                             in_out{chain});
 }
 
 // Will also use NoDefaultStrategy<T> to enable complete override of the reflection strategy
