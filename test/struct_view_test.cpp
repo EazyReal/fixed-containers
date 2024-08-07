@@ -776,7 +776,9 @@ namespace test_namespace
 class PrivateClass
 {
     int a{};
-    void private_method() { (void)a; }
+
+public:
+    int& get_a() { return a; }
 };
 struct PrivateClassHolder
 {
@@ -789,13 +791,38 @@ namespace fixed_containers::recursive_reflection_detail
 template <>
 inline constexpr bool StrategyNoDefault<test_namespace::PrivateClass> = true;
 
+template <typename S>
+    requires(std::same_as<std::decay_t<S>, test_namespace::PrivateClass>)
+struct ReflectionHandler<S>
+{
+    using Type = std::decay_t<S>;
+    static constexpr bool reflectable = true;
+
+    template <typename T, typename PreFunction, typename PostFunction>
+        requires(std::same_as<std::decay_t<T>, Type>)
+    static constexpr void reflect_into(T&& instance,
+                                       PreFunction&& pre_fn,
+                                       PostFunction&& post_fn,
+                                       in_out<PathNameChain> chain)
+    {
+        std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<T>(instance));
+        chain->push_back("a");
+        recursive_reflection::for_each_path_dfs_helper(std::forward<Type>(instance).get_a(),
+                                                       std::forward<PreFunction>(pre_fn),
+                                                       std::forward<PostFunction>(post_fn),
+                                                       fixed_containers::in_out{*chain});
+        chain->pop_back();
+        std::forward<PostFunction>(post_fn)(std::as_const(*chain), std::forward<T>(instance));
+    }
+};
+
 }  // namespace fixed_containers::recursive_reflection_detail
 
 TEST(StructView, StrategyNoDefault)
 {
     test_namespace::PrivateClassHolder private_class_holder{};
     fixed_containers::struct_view::StructView struct_view(private_class_holder);
-    EXPECT_EQ(0, struct_view.get_path_map_ref().size());
+    EXPECT_EQ(1, struct_view.get_path_map_ref().size());
 }
 
 struct CARRAY
