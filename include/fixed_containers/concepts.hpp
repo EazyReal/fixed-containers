@@ -117,6 +117,11 @@ concept ConstexprDefaultConstructible = requires() {
 template <class T>
 concept NotConstexprDefaultConstructible = not ConstexprDefaultConstructible<T>;
 
+template <typename T>
+concept ConstexprUnitConstructible = requires() {
+    { std::bool_constant<(T{std::tuple<>{}}, true)>() } -> std::same_as<std::true_type>;
+};
+
 template <typename T, auto... CONSTRUCTOR_ARGS>
 concept IsStructuralType = requires() { std::integral_constant<T, T{CONSTRUCTOR_ARGS...}>(); };
 template <typename T>
