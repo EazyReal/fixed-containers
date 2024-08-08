@@ -78,7 +78,7 @@
  *     - MetadataType
  *     - CallInterface
  * Strategy:
- * - define corresponding StrategyConcept and mark it StrategyNoDefault
+ * - define corresponding StrategyConcept and mark it STRATEGY_NO_DEFAULT
  * - ReflectionHandler Specialization
  */
 
@@ -201,12 +201,12 @@ template <typename T>
 struct MetadataExtractor
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = false;
-    static constexpr StructTreeNodeType metadata_type = DEFAULT;
+    static constexpr bool DO_EXTRACT = false;
+    static constexpr StructTreeNodeType METADATA_TYPE = DEFAULT;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,  // move this specialization inside
+            .metadata_type = METADATA_TYPE,  // move this specialization inside
             .detail_type = type_name<Type>(),
             .call_interface = nullptr,
         };
@@ -217,12 +217,12 @@ template <MetadataOptional T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = OPTIONAL;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = OPTIONAL;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,
+            .metadata_type = METADATA_TYPE,
             .detail_type = type_name<Type>(),
             .call_interface =
                 OptionalCallInterface{.has_value = [](const void* instance)
@@ -236,12 +236,12 @@ template <MetadataResizableIterable T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = ITERABLE_RESIZABLE;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = ITERABLE_RESIZABLE;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,
+            .metadata_type = METADATA_TYPE,
             .detail_type = type_name<Type>(),
             .call_interface = ResizableInterableCallInterface{
                 .size = [](const void* instance)
@@ -257,12 +257,12 @@ template <MetadataIterable T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = ITERABLE;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = ITERABLE;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,  // move this specialization inside
+            .metadata_type = METADATA_TYPE,  // move this specialization inside
             .detail_type = type_name<Type>(),
             .call_interface = nullptr,
         };
@@ -274,12 +274,12 @@ template <MetadataEnum T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = PRIMITIVE_ENUM;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = PRIMITIVE_ENUM;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,
+            .metadata_type = METADATA_TYPE,
             .detail_type = type_name<Type>(),
             .call_interface = EnumCallInterface{.enum_name = [](const void* instance) {
                 return magic_enum::enum_name(*static_cast<const Type*>(instance));
@@ -292,11 +292,11 @@ template <MetadataEnum T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = PRIMITIVE_STRING_VIEW;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = PRIMITIVE_STRING_VIEW;
     static StructTreeNodeMetadata make_metadata()
     {
-        return StructTreeNodeMetadata{.metadata_type = metadata_type,
+        return StructTreeNodeMetadata{.metadata_type = METADATA_TYPE,
                                       .detail_type = type_name<Type>(),
                                       .call_interface = nullptr};
     }
@@ -306,12 +306,12 @@ template <MetadataPrimitive T>
 struct MetadataExtractor<T>
 {
     using Type = std::decay_t<T>;
-    static constexpr bool do_extract = true;
-    static constexpr StructTreeNodeType metadata_type = PRIMITIVE;
+    static constexpr bool DO_EXTRACT = true;
+    static constexpr StructTreeNodeType METADATA_TYPE = PRIMITIVE;
     static StructTreeNodeMetadata make_metadata()
     {
         return StructTreeNodeMetadata{
-            .metadata_type = metadata_type,  // move this specialization inside
+            .metadata_type = METADATA_TYPE,  // move this specialization inside
             .detail_type = type_name<Type>(),
             .call_interface = nullptr,
         };
@@ -364,7 +364,7 @@ constexpr void for_each_index_of_path_helper(void* base_pointer,
     }
 
     // TODO: dynamic realized_size with tree-style implementation
-    std::size_t realized_size = offset.capacity[DIM];
+    const std::size_t realized_size = offset.capacity[DIM];
 
     for (std::size_t i = 0; i < realized_size; ++i)
     {
@@ -417,8 +417,8 @@ using recursive_reflection::path_to_string;
 template <typename T>
 constexpr std::string_view type_name_without_namespace()
 {
-    std::string_view str = type_name<std::decay_t<T>>();
-    size_t pos = str.rfind(":");
+    const std::string_view str = type_name<std::decay_t<T>>();
+    const size_t pos = str.rfind(':');
     return (pos != std::string_view::npos) ? str.substr(pos + 1) : str;
 }
 
@@ -463,7 +463,7 @@ auto extract_path_properties_of_filtered(
                    // F& field`
         [&]<typename F>(const PathNameChain& chain, const F& field)
         {
-            if constexpr (struct_view_detail::MetadataExtractor<F>::do_extract)
+            if constexpr (struct_view_detail::MetadataExtractor<F>::DO_EXTRACT)
             {
                 if (!registered_set.has_value() || registered_set.value().contains(chain))
                 {
@@ -486,10 +486,10 @@ auto extract_path_properties_of_filtered(
 
             if constexpr (struct_view_detail::Iterable<F>)
             {
-                constexpr auto type = struct_view_detail::MetadataExtractor<F>::metadata_type;
+                constexpr auto TYPE = struct_view_detail::MetadataExtractor<F>::METADATA_TYPE;
                 ++dim;
                 strides.push_back(sizeof(typename std::ranges::range_value_t<F>));
-                if constexpr (type == struct_view_detail::ITERABLE_RESIZABLE)
+                if constexpr (TYPE == struct_view_detail::ITERABLE_RESIZABLE)
                 {
                     capacity.push_back(field.capacity());
                 }
@@ -535,8 +535,8 @@ public:
     StructView() = default;
 
     template <typename S>
-    StructView(S&& instance)
-      : path_properties_(extract_path_properties_of(std::forward<S>(instance)))
+    StructView(S& instance)
+      : path_properties_(extract_path_properties_of(instance))
     {
     }
     template <typename SuperStruct, typename SubStruct>
@@ -587,9 +587,15 @@ public:
         return path_properties_.at(path);
     }
 
-    bool contains(const PathNameChain& path) const { return path_properties_.contains(path); }
+    [[nodiscard]] bool contains(const PathNameChain& path) const
+    {
+        return path_properties_.contains(path);
+    }
 
-    const PathPropertiesMap<MAXIMUM_SIZE>& get_path_map_ref() const { return path_properties_; }
+    [[nodiscard]] const PathPropertiesMap<MAXIMUM_SIZE>& get_path_map_ref() const
+    {
+        return path_properties_;
+    }
 
     const void* get_field(const void* instance,
                           const PathNameChain& path,

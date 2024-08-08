@@ -13,11 +13,14 @@ template <typename S>
 struct ReflectionHandler
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
-    static constexpr void reflect_into(T&&, PreFunction&&, PostFunction&&, in_out<PathNameChain>)
+    static constexpr void reflect_into(T&& /*unused*/,
+                                       PreFunction&& /*unused*/,
+                                       PostFunction&& /*unused*/,
+                                       in_out<PathNameChain> /*unused*/)
     {
         static_assert(std::is_same_v<Type, void>);
     }

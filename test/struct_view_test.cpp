@@ -2,12 +2,19 @@
 
 #include "fixed_containers/struct_view.hpp"
 
+#include "fixed_containers/concepts.hpp"
 #include "fixed_containers/fixed_vector.hpp"
+#include "fixed_containers/in_out.hpp"
 #include "fixed_containers/out.hpp"
+#include "fixed_containers/recursive_reflection.hpp"
+#include "fixed_containers/recursive_reflection_fwd.hpp"
+#include "fixed_containers/reflection.hpp"
 
 #include <gtest/gtest.h>
+#include <magic_enum.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -415,7 +422,7 @@ struct NestedSubStructLayer1
 
 TEST(StructView, GetPointerDistanceRecursive)
 {
-    NestedSuperStructLayer1 nested_super_struct_1{};
+    const NestedSuperStructLayer1 nested_super_struct_1{};
     EXPECT_EQ(8,
               struct_view_detail::get_pointer_distance(nested_super_struct_1,
                                                        nested_super_struct_1.retain1));
@@ -817,10 +824,10 @@ namespace test_namespace
 {
 class PrivateClass
 {
-    int a{};
+    int a_{};
 
 public:
-    int& get_a() { return a; }
+    int& get_a() { return a_; }
 };
 struct PrivateClassHolder
 {
@@ -831,14 +838,14 @@ namespace fixed_containers::recursive_reflection_detail
 {
 
 template <>
-inline constexpr bool StrategyNoDefault<test_namespace::PrivateClass> = true;
+inline constexpr bool STRATEGY_NO_DEFAULT<test_namespace::PrivateClass> = true;
 
 template <typename S>
     requires(std::same_as<std::decay_t<S>, test_namespace::PrivateClass>)
 struct ReflectionHandler<S>
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
@@ -848,7 +855,7 @@ struct ReflectionHandler<S>
                                        in_out<PathNameChain> chain)
     {
         std::forward<PreFunction>(pre_fn)(std::as_const(*chain), std::forward<T>(instance));
-        chain->push_back("a");
+        chain->push_back("a_");
         recursive_reflection::for_each_path_dfs_helper(std::forward<Type>(instance).get_a(),
                                                        std::forward<PreFunction>(pre_fn),
                                                        std::forward<PostFunction>(post_fn),
@@ -863,20 +870,20 @@ struct ReflectionHandler<S>
 TEST(StructView, StrategyNoDefault)
 {
     test_namespace::PrivateClassHolder private_class_holder{};
-    fixed_containers::struct_view::StructView struct_view(private_class_holder);
+    const fixed_containers::struct_view::StructView struct_view(private_class_holder);
     EXPECT_EQ(1, struct_view.get_path_map_ref().size());
 }
 
-struct CARRAY
+struct CArrayHolder
 {
     int a[2];
     int b;
 };
 
-TEST(ExtensibleReflectionTests, CARRAY)
+TEST(ExtensibleReflectionTests, CArray)
 {
-    CARRAY carray{};
-    fixed_containers::struct_view::StructView struct_view(carray);
+    const CArrayHolder c_array{};
+    const fixed_containers::struct_view::StructView struct_view(c_array);
     EXPECT_EQ(2, struct_view.get_path_map_ref().size());
 }
 

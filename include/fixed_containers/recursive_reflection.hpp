@@ -14,7 +14,7 @@
 // We provide default reflection strategy for primitives, optional, iterable and reflectable types.
 // User can also extend the reflection strategy by providing a custom reflection strategy for a
 // type. We even allow overriding default reflection strategy for a type by providing a
-// StrategyNoDefault specialization and a custom reflection strategy.
+// STRATEGY_NO_DEFAULT specialization and a custom reflection strategy.
 
 // constants
 namespace fixed_containers::recursive_reflection_detail
@@ -48,13 +48,13 @@ concept ResizableIterable = requires {
 };
 
 template <typename T>
-inline constexpr bool IsOptionalImpl = false;
+inline constexpr bool IS_OPTIONAL_IMPL = false;
 
 template <typename T>
-inline constexpr bool IsOptionalImpl<std::optional<T>> = true;
+inline constexpr bool IS_OPTIONAL_IMPL<std::optional<T>> = true;
 
 template <typename T>
-concept IsOptional = IsOptionalImpl<T>;
+concept IsOptional = IS_OPTIONAL_IMPL<T>;
 
 template <typename T>
 concept Bitset = requires { requires std::same_as<T, std::bitset<T{}.size()>>; };
@@ -79,20 +79,20 @@ concept Primitive = PrimitiveValue<T> || PrimitiveView<T>;
 // exclude some contiguous sized ranges that we do not want to consider as Iterable
 // use inline constexpr bool for customizability
 template <typename T>
-inline constexpr bool NotConsideredIterable = false;
+inline constexpr bool NOT_CONSIDERED_ITERABLE = false;
 
 template <>
-inline constexpr bool NotConsideredIterable<std::string_view> = true;
+inline constexpr bool NOT_CONSIDERED_ITERABLE<std::string_view> = true;
 
 template <IsOptional T>
-inline constexpr bool NotConsideredIterable<T> = true;
+inline constexpr bool NOT_CONSIDERED_ITERABLE<T> = true;
 
 template <Bitset T>
-inline constexpr bool NotConsideredIterable<T> = true;
+inline constexpr bool NOT_CONSIDERED_ITERABLE<T> = true;
 
 template <typename T>
-concept Iterable =
-    (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) && !NotConsideredIterable<T>;
+concept Iterable = (std::ranges::sized_range<T> && std::ranges::contiguous_range<T>) &&
+                   !NOT_CONSIDERED_ITERABLE<T>;
 }  // namespace fixed_containers::recursive_reflection_detail
 
 // reflection strategy concepts
@@ -102,22 +102,23 @@ namespace fixed_containers::recursive_reflection_detail
 // The following defines the disjoint set of how we handle reflection of a type
 // We allow user to specify types they want to customize by template specialization
 template <typename T>
-inline constexpr bool StrategyNoDefault = false;
+inline constexpr bool STRATEGY_NO_DEFAULT = false;
 
 // The following defines the disjoint set of how we recurse
 template <typename T>
-concept StrategyIterable = Iterable<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>;
+concept StrategyIterable = Iterable<T> && ReflectionConstructible<T> && !STRATEGY_NO_DEFAULT<T>;
 
 template <typename T>
-concept StrategyOptional = IsOptional<T> && ReflectionConstructible<T> && !StrategyNoDefault<T>;
+concept StrategyOptional = IsOptional<T> && ReflectionConstructible<T> && !STRATEGY_NO_DEFAULT<T>;
 
 template <typename T>
-concept StrategyPrimitive = (Primitive<T> || EnumValue<T> || EnumView<T>) && !StrategyNoDefault<T>;
+concept StrategyPrimitive =
+    (Primitive<T> || EnumValue<T> || EnumView<T>) && !STRATEGY_NO_DEFAULT<T>;
 
 template <typename T>
-concept StrategyReflect =
-    reflection::Reflectable<T> && ReflectionConstructible<T> &&
-    !(StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T>) && !StrategyNoDefault<T>;
+concept StrategyReflect = reflection::Reflectable<T> && ReflectionConstructible<T> &&
+                          !(StrategyIterable<T> || StrategyOptional<T> || StrategyPrimitive<T>) &&
+                          !STRATEGY_NO_DEFAULT<T>;
 
 }  // namespace fixed_containers::recursive_reflection_detail
 
@@ -130,7 +131,7 @@ template <typename S>
 struct ReflectionHandler<S>
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
@@ -149,7 +150,7 @@ template <typename S>
 struct ReflectionHandler<S>
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
@@ -198,7 +199,7 @@ template <typename S>
 struct ReflectionHandler<S>
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
@@ -244,7 +245,7 @@ template <typename S>
 struct ReflectionHandler<S>
 {
     using Type = std::decay_t<S>;
-    static constexpr bool reflectable = true;
+    static constexpr bool REFLECTABLE = true;
 
     template <typename T, typename PreFunction, typename PostFunction>
         requires(std::same_as<std::decay_t<T>, Type>)
@@ -337,15 +338,15 @@ constexpr void for_each_path_dfs_helper(S&& reflected_object,
                                         in_out<PathNameChain> chain)
 {
     using Handler = recursive_reflection_detail::ReflectionHandler<std::decay_t<S>>;
-    std::cout << "using Handler: " << type_name<Handler>() << std::endl;
-    if constexpr (Handler::reflectable)
+    std::cout << "using Handler: " << type_name<Handler>() << '\n';
+    if constexpr (Handler::REFLECTABLE)
     {
-        std::cout << "into " << path_to_string(*chain) << std::endl;
+        std::cout << "into " << path_to_string(*chain) << '\n';
         Handler::reflect_into(std::forward<S>(reflected_object),
                               std::forward<PreFunction>(pre_fn),
                               std::forward<PostFunction>(post_fn),
                               in_out{*chain});
-        std::cout << "outof " << path_to_string(*chain) << std::endl;
+        std::cout << "outof " << path_to_string(*chain) << '\n';
     }
 }
 

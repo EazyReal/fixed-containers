@@ -1645,8 +1645,13 @@ cc_test(
     name = "struct_view_test",
     srcs = ["test/struct_view_test.cpp"],
     deps = [
+        ":concepts",
         ":struct_view",
+        ":reflection",
+        ":recursive_reflection",
+        ":recursive_reflection_fwd",
         ":fixed_vector",
+        ":in_out",
         ":out",
         "@com_github_neargye_magic_enum//:magic_enum",
         "@com_google_googletest//:gtest",
