@@ -85,7 +85,8 @@
 namespace fixed_containers::struct_view_detail
 {
 
-using namespace fixed_containers::recursive_reflection_detail;
+using namespace fixed_containers::  // NOLINT(google-build-using-namespace)
+    recursive_reflection_detail;    // NOLINT(google-build-using-namespace)
 
 inline constexpr std::size_t MAX_NUM_PATHS = 100;
 inline constexpr std::size_t MAX_PATH_LENGTH = 16;
@@ -685,9 +686,11 @@ void sub_struct_view_of(void* super_struct_base_pointer,
                 // check the detail_types are compatiable, need to consider pointer and qualifiers
                 // TODO: optimization for string_view pointer comparison to O(1) since we know the
                 // structure
-                assert_or_abort(path_properties.metadata.detail_type.find(
-                                    super_struct_path_properties.metadata.detail_type) !=
-                                std::string_view::npos);
+                assert_or_abort(     // NOLINT(abseil-string-find-str-contains)
+                    path_properties  // NOLINT(abseil-string-find-str-contains)
+                        .metadata    // NOLINT(abseil-string-find-str-contains)
+                        .detail_type.find(super_struct_path_properties.metadata.detail_type) !=
+                    std::string_view::npos);
                 *reinterpret_cast<std::uintptr_t*>(field_ptr) =
                     reinterpret_cast<std::uintptr_t>(super_struct_field_ptr);
             }

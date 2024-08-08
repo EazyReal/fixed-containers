@@ -6,6 +6,7 @@
 #include "fixed_containers/type_name.hpp"
 
 #include <bitset>
+#include <variant>
 
 // This library aims to provide a reflection strategy for recursive reflection into a type.
 // We provide default reflection strategy for primitives, optional, iterable and reflectable types.
@@ -24,10 +25,7 @@ inline constexpr std::string_view PATH_DELIMITER = ".";
 // reflection related concepts for dfs strategy and metadata exrtraction strategy in struct_view
 namespace fixed_containers::recursive_reflection_detail
 {
-// TODO: make sure we modify this concept after we support unit constructor and put it under
-// concepts.hpp
-template <typename T>
-concept ReflectionConstructible = ConstexprDefaultConstructible<T>;
+using reflection::ReflectionConstructible;
 
 template <typename T>
 concept DurationLike = requires {
@@ -165,7 +163,18 @@ struct ReflectionHandler<S>
         if (!instance.has_value())
         {
             // const_cast<std::decay_t<InstanceType>*>(std::addressof(instance))->emplace();
-            instance.emplace();
+            if constexpr (ConstexprUnitConstructible<typename Type::value_type>)
+            {
+                instance.emplace(std::monostate{});
+            }
+            else if constexpr (ConstexprDefaultConstructible<typename Type::value_type>)
+            {
+                instance.emplace();
+            }
+            else
+            {
+                static_assert(std::same_as<typename Type::value_type, bool>);
+            }
             constructed = true;
         }
         recursive_reflection::for_each_path_dfs_helper(instance.value(),
@@ -201,7 +210,18 @@ struct ReflectionHandler<S>
         bool constructed{false};
         if (std::ranges::empty(instance))
         {
-            std::ranges::construct_at(std::ranges::data(instance));
+            if constexpr (ConstexprUnitConstructible<typename Type::value_type>)
+            {
+                std::ranges::construct_at(std::ranges::data(instance), std::monostate{});
+            }
+            else if constexpr (ConstexprDefaultConstructible<typename Type::value_type>)
+            {
+                std::ranges::construct_at(std::ranges::data(instance));
+            }
+            else
+            {
+                static_assert(std::same_as<typename Type::value_type, bool>);
+            }
             constructed = true;
         }
         recursive_reflection::for_each_path_dfs_helper(*std::ranges::data(instance),

@@ -3,6 +3,7 @@
 #include <concepts>
 #include <iterator>
 #include <type_traits>
+#include <variant>
 
 // NOTE: A concept X is accompanied by NotX and should be used instead of (!X) for proper
 // subsumption. De Morgan's law also does not apply for subsumption.
@@ -119,7 +120,7 @@ concept NotConstexprDefaultConstructible = not ConstexprDefaultConstructible<T>;
 
 template <typename T>
 concept ConstexprUnitConstructible = requires() {
-    { std::bool_constant<(T{std::tuple<>{}}, true)>() } -> std::same_as<std::true_type>;
+    { std::bool_constant<(T{std::monostate{}}, true)>() } -> std::same_as<std::true_type>;
 };
 
 template <typename T, auto... CONSTRUCTOR_ARGS>

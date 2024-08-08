@@ -12,6 +12,10 @@
 #include <cstdint>
 #include <iostream>
 #include <optional>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace fixed_containers::struct_view
 {
@@ -742,6 +746,44 @@ TEST(StructView, SubStructViewOfRecursiveWithArray)
                         &array_test_super_struct_1.matrix[i][j]);
         }
     }
+}
+
+namespace
+{
+
+struct UnitConstructible
+{
+    bool some_field;
+
+    UnitConstructible() = delete;
+    constexpr UnitConstructible(std::monostate /*unused*/)
+      : some_field(true)
+    {
+    }
+};
+
+struct UnitConstructibleHolder
+{
+    std::optional<UnitConstructible> maybe_unit_constructible{};
+    fixed_containers::FixedVector<UnitConstructible, TEST_ARRAY_SIZE> vector_unit_constructible{};
+};
+
+}  // namespace
+
+TEST(StructView, ExtractPathsOfUnitConstructible)
+{
+    static_assert(ConstexprUnitConstructible<UnitConstructible>);
+    static_assert(recursive_reflection_detail::StrategyReflect<UnitConstructible>);
+    auto paths = extract_paths_of<UnitConstructibleHolder>();
+    EXPECT_EQ(path_count_of<UnitConstructibleHolder>(), std::size(paths));
+    EXPECT_EQ(7, path_count_of<UnitConstructibleHolder>());
+    EXPECT_TRUE(paths.contains(path_from_string("")));
+    EXPECT_TRUE(paths.contains(path_from_string("maybe_unit_constructible")));
+    EXPECT_TRUE(paths.contains(path_from_string("maybe_unit_constructible.value()")));
+    EXPECT_TRUE(paths.contains(path_from_string("maybe_unit_constructible.value().some_field")));
+    EXPECT_TRUE(paths.contains(path_from_string("vector_unit_constructible")));
+    EXPECT_TRUE(paths.contains(path_from_string("vector_unit_constructible.data[:]")));
+    EXPECT_TRUE(paths.contains(path_from_string("vector_unit_constructible.data[:].some_field")));
 }
 
 }  // namespace fixed_containers::struct_view
