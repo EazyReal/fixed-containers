@@ -9,10 +9,18 @@ namespace fixed_containers::recursive_reflection_detail
 inline constexpr std::size_t MAX_PATH_LENGTH = 16;
 using PathNameChain = FixedVector<std::string_view, MAX_PATH_LENGTH>;
 
-template <typename T>
+template <typename S>
 struct ReflectionHandler
 {
-    static constexpr bool reflectable = false;
+    using Type = std::decay_t<S>;
+    static constexpr bool reflectable = true;
+
+    template <typename T, typename PreFunction, typename PostFunction>
+        requires(std::same_as<std::decay_t<T>, Type>)
+    static constexpr void reflect_into(T&&, PreFunction&&, PostFunction&&, in_out<PathNameChain>)
+    {
+        static_assert(std::is_same_v<Type, void>);
+    }
 };
 
 }  // namespace fixed_containers::recursive_reflection_detail

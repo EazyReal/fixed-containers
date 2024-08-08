@@ -8,6 +8,8 @@
 #include <bitset>
 #include <variant>
 
+#include <iostream>
+
 // This library aims to provide a reflection strategy for recursive reflection into a type.
 // We provide default reflection strategy for primitives, optional, iterable and reflectable types.
 // User can also extend the reflection strategy by providing a custom reflection strategy for a
@@ -335,12 +337,15 @@ constexpr void for_each_path_dfs_helper(S&& reflected_object,
                                         in_out<PathNameChain> chain)
 {
     using Handler = recursive_reflection_detail::ReflectionHandler<std::decay_t<S>>;
+    std::cout << "using Handler: " << type_name<Handler>() << std::endl;
     if constexpr (Handler::reflectable)
     {
+        std::cout << "into " << path_to_string(*chain) << std::endl;
         Handler::reflect_into(std::forward<S>(reflected_object),
                               std::forward<PreFunction>(pre_fn),
                               std::forward<PostFunction>(post_fn),
                               in_out{*chain});
+        std::cout << "outof " << path_to_string(*chain) << std::endl;
     }
 }
 
